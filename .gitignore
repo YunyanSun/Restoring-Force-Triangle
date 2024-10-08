@@ -1,162 +1,362 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import pandas as pd
 
-# C extensions
-*.so
+# Shoelace area function to calculate the area of a polygon
+def shoelace_area(coords):
+    x = coords[:, 0]
+    y = coords[:, 1]
+    return 0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# 1. Request user input for ΔE and k_eff
+Delta_E = float(input("Enter ΔE (kcal/mol): "))
+k_eff = float(input("Enter k_eff (nN/Å): "))
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+# Convert ΔE from kcal/mol to nN·Å using the conversion factor
+conversion_factor = 0.069477  # nN·Å per kcal/mol
+E_nN_A = Delta_E * conversion_factor  # Energy in nN·Å
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# 2. Compute f_max
+f_max = np.sqrt((2 * k_eff * E_nN_A) / 9)
+print(f"\nCalculated f_max: {f_max:.4f} nN")
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
+# 3. Prompt the user for ΔE‡ values
+default_Delta_E_thermal_target = 16  # Default value in kcal/mol
+print("\nThe default ΔE‡ is set to 16 kcal/mol.")
+choice = input("Would you like to provide alternative ΔE‡ value(s)? (yes/no): ").strip().lower()
 
-# Translations
-*.mo
-*.pot
+if choice == 'no':
+    Delta_E_thermal_targets = [default_Delta_E_thermal_target]
+elif choice == 'yes':
+    num_values = int(input("How many ΔE‡ values would you like to provide? (1-3): "))
+    while num_values not in [1, 2, 3]:
+        num_values = int(input("Please enter a number between 1 and 3: "))
+    Delta_E_thermal_targets = []
+    for i in range(num_values):
+        value = float(input(f"Enter ΔE‡ value {i+1} (kcal/mol): "))
+        Delta_E_thermal_targets.append(value)
+else:
+    print("Invalid input. Proceeding with the default ΔE‡ value.")
+    Delta_E_thermal_targets = [default_Delta_E_thermal_target]
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+# 4. Compute f*_predicted for each ΔE‡
+fa_values = np.linspace(0, f_max, 500)
+Delta_E_thermal_curves = {}
+f_star_predicted_values = []
+colors = ['blue', 'green', 'red']  # Colors for different ΔE‡ values
 
-# Flask stuff:
-instance/
-.webassets-cache
+for idx, Delta_E_thermal_target in enumerate(Delta_E_thermal_targets):
+    # Compute ΔE‡ vs f_a curve
+    Delta_E_thermal_values = Delta_E * (1 - (fa_values / f_max))**2
+    Delta_E_thermal_curves[Delta_E_thermal_target] = Delta_E_thermal_values
 
-# Scrapy stuff:
-.scrapy
+    # Compute f*_predicted
+    if Delta_E > Delta_E_thermal_target:
+        f_star_predicted = f_max * (1 - np.sqrt(Delta_E_thermal_target / Delta_E))
+    else:
+        f_star_predicted = 0  # No force needed if ΔE ≤ ΔE‡
+    f_star_predicted_values.append(f_star_predicted)
+    print(f"\nFor ΔE‡ = {Delta_E_thermal_target} kcal/mol, the predicted applied force f* is: {f_star_predicted:.4f} nN")
 
-# Sphinx documentation
-docs/_build/
+# 5. Plot ΔE‡ vs f_a with user-specified ΔE‡ values
+plt.figure(figsize=(10, 6))
+plt.plot(fa_values, Delta_E_thermal_values, label='∆E‡ vs. f_a', color='black')
 
-# PyBuilder
-.pybuilder/
-target/
+handles = []
+for idx, Delta_E_thermal_target in enumerate(Delta_E_thermal_targets):
+    color = colors[idx % len(colors)]
+    plt.axhline(y=Delta_E_thermal_target, color=color, linestyle='--',
+                label=f'∆E‡ = {Delta_E_thermal_target} kcal/mol')
+    f_star_predicted = f_star_predicted_values[idx]
+    if Delta_E > Delta_E_thermal_target:
+        plt.plot(f_star_predicted, Delta_E_thermal_target, 'o', color=color,
+                 label=f'Intersection at f_a = {f_star_predicted:.4f} nN')
+        plt.text(f_star_predicted, Delta_E_thermal_target, f' ({f_star_predicted:.4f}, {Delta_E_thermal_target})',
+                 horizontalalignment='left', verticalalignment='bottom')
+    else:
+        print(f"∆E is less than or equal to ∆E‡ ({Delta_E_thermal_target} kcal/mol). No applied force needed.")
 
-# Jupyter Notebook
-.ipynb_checkpoints
+plt.xlabel('Applied Force f_a (nN)')
+plt.ylabel('∆E‡ (kcal/mol)')
+plt.title('∆E‡ vs. Applied Force f_a')
+plt.grid(True)
+plt.legend()
+plt.show()
 
-# IPython
-profile_default/
-ipython_config.py
+# 6. Ask the user which ΔE‡ value to use for the RFT plot
+if len(Delta_E_thermal_targets) > 1:
+    print("\nYou have entered multiple ΔE‡ values.")
+    print("Which ΔE‡ value would you like to use for the RFT plot?")
+    for idx, Delta_E_thermal_target in enumerate(Delta_E_thermal_targets):
+        print(f"{idx+1}: ΔE‡ = {Delta_E_thermal_target} kcal/mol")
+    selected_idx = int(input("Enter the number corresponding to your choice: ")) - 1
+    Delta_E_thermal_target_RFT = Delta_E_thermal_targets[selected_idx]
+else:
+    Delta_E_thermal_target_RFT = Delta_E_thermal_targets[0]
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+# Find the index of the selected ΔE‡
+selected_idx_RFT = Delta_E_thermal_targets.index(Delta_E_thermal_target_RFT)
+f_a = f_star_predicted_values[selected_idx_RFT]  # Corresponding f_a for RFT
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+# 7. Compute c for the selected ΔE‡
+c = -np.sqrt((9 * k_eff * E_nN_A) / 32)
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+# 8. Compute points of intersection for all ΔE‡ values
+results = []
+for idx, Delta_E_thermal_target in enumerate(Delta_E_thermal_targets):
+    f_a_i = f_star_predicted_values[idx]
+    # Points A, B, C
+    X_A = 0  # Point A
+    Y_A = f_a_i
+    X_B = - (8 * c) / (9 * k_eff)  # Point B
+    Y_B = -k_eff * X_B + f_a_i
+    X_C = - (8 * c) / k_eff  # Point C
+    Y_C = f_a_i
+    X_TAB = f_a_i / k_eff  # Intersection of Line 2 with Y = 0
+    Y_TAB = 0
+    X_TTS = - (c + f_a_i) * 8 / k_eff  # Intersection of Line 3 with Y = 0
+    Y_TTS = 0
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
-.pdm.toml
-.pdm-python
-.pdm-build/
+    # Energies of subregions
+    energy_triangle_A = 0.5 * X_TAB * f_a_i / conversion_factor  # Energy of Triangle A
+    energy_rectangle_B = (X_TTS - X_TAB) * f_a_i / conversion_factor  # Energy of Rectangle B
+    coords_E = np.array([[X_TAB, 0], [X_B, Y_B], [X_TTS, 0]])
+    energy_triangle_E = shoelace_area(coords_E) / conversion_factor  # Energy of Triangle ∆E‡
+    energy_triangle_C = 0.5 * (X_C - X_TTS) * f_a_i / conversion_factor  # Energy of Triangle C
+    energy_triangle_D = -0.5 * (X_C - X_TTS) * f_a_i / conversion_factor  # Energy of Triangle D (negative)
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+    # Store results
+    results.append({
+        'ΔE‡': Delta_E_thermal_target,
+        'f*': f_a_i,
+        'Point A': (X_A, Y_A),
+        'Point B': (X_B, Y_B),
+        'Point C': (X_C, Y_C),
+        'X_TAB': X_TAB,
+        'X_TTS': X_TTS,
+        'E_Triangle_A': energy_triangle_A,
+        'E_Rectangle_B': energy_rectangle_B,
+        'E_Triangle_ΔE‡': energy_triangle_E,
+        'E_Triangle_C': energy_triangle_C,
+        'E_Triangle_D': energy_triangle_D
+    })
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+# 9. Plot the RFT for the selected ΔE‡
+# Use the stored results
+res = results[selected_idx_RFT]
+X_A = res['Point A'][0]
+Y_A = res['Point A'][1]
+X_B = res['Point B'][0]
+Y_B = res['Point B'][1]
+X_C = res['Point C'][0]
+Y_C = res['Point C'][1]
+X_TAB = res['X_TAB']
+X_TTS = res['X_TTS']
+f_a = res['f*']
 
-# SageMath parsed files
-*.sage.py
+# Define X range for plotting
+X_max = X_C * 1.2  # X-axis from -0.1 to 1.2 * X_C
+X = np.linspace(-0.1, X_max, 500)
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Compute Y values for each line
+Y1 = f_a * np.ones_like(X)  # Line 1
+Y2 = -k_eff * X + f_a       # Line 2
+Y3 = (k_eff / 8) * X + c + f_a  # Line 3
 
-# Spyder project settings
-.spyderproject
-.spyproject
+# Plot the RFT
+plt.figure(figsize=(10, 6))
 
-# Rope project settings
-.ropeproject
+# Plot lines (Line 1, Line 2, Line 3)
+plt.plot(X, Y1, 'k-', label='Line 1')
+plt.plot(X, Y2, 'k-', label='Line 2')
+plt.plot(X, Y3, 'k-', label='Line 3')
 
-# mkdocs documentation
-/site
+# Define subregions
+# Triangle A
+triangle_A_X = [0, X_TAB, X_TAB]
+triangle_A_Y = [f_a, f_a, 0]
+plt.fill(triangle_A_X, triangle_A_Y, color='lightblue', alpha=0.5)
+plt.text(X_TAB / 2, f_a / 2, 'A', fontsize=16, color='darkblue', ha='center')
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# Rectangle B
+rect_B_X = [X_TAB, X_TTS, X_TTS, X_TAB]
+rect_B_Y = [f_a, f_a, 0, 0]
+plt.fill(rect_B_X, rect_B_Y, color='olivedrab', alpha=0.5)
+plt.text((X_TAB + X_TTS) / 2, f_a / 2, 'B', fontsize=16, color='darkgreen', ha='center')
 
-# Pyre type checker
-.pyre/
+# Triangle ∆E‡
+triangle_E_X = [X_TAB, X_B, X_TTS]
+triangle_E_Y = [0, Y_B, 0]
+plt.fill(triangle_E_X, triangle_E_Y, color='lightcoral', alpha=0.5)
+plt.text((X_TAB + X_TTS) / 2, Y_B / 2, '∆E‡', fontsize=16, color='darkred', ha='center')
 
-# pytype static type analyzer
-.pytype/
+# Triangle C
+triangle_C_X = [X_TTS, X_TTS, X_C]
+triangle_C_Y = [0, f_a, f_a]
+plt.fill(triangle_C_X, triangle_C_Y, color='orange', alpha=0.5)
+plt.text((X_TTS + X_C) / 2, f_a / 2, 'C', fontsize=16, color='darkorange', ha='center')
 
-# Cython debug symbols
-cython_debug/
+# Triangle D
+triangle_D_X = [X_TTS, X_C, X_C]
+triangle_D_Y = [0, 0, f_a]
+plt.fill(triangle_D_X, triangle_D_Y, color='lightgray', alpha=0.5)
+plt.text((X_TTS + X_C) / 2, f_a / 4, 'D', fontsize=16, color='black', ha='center')
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+# Add labels for X_TAB, X_TTS, and Altitude (f_max) vertical lines
+plt.plot(X_TAB, 0, 'ro')  # Mark X_TAB point
+plt.axvline(x=X_TAB, color='red', linestyle='--', linewidth=1)
+plt.plot(X_TTS, 0, 'go')  # Mark X_TTS point
+plt.axvline(x=X_TTS, color='green', linestyle='--', linewidth=1)
+plt.plot([X_B, X_B], [Y_A, Y_B], 'b--', linewidth=1)  # Altitude (f_max)
+
+# Plot the points and label them
+plt.plot(X_A, Y_A, 'ko')  # Point A
+plt.plot(X_B, Y_B, 'mo')  # Point B
+plt.plot(X_C, Y_C, 'ko')  # Point C
+plt.text(X_A, Y_A, ' A', verticalalignment='bottom', fontsize=12)
+plt.text(X_B, Y_B, ' B', verticalalignment='top', fontsize=12)
+plt.text(X_C, Y_C, ' C', verticalalignment='bottom', fontsize=12)
+
+# Customize plot
+plt.xlabel('Displacement (Å)')
+plt.ylabel('Force (nN)')
+plt.title(f'Restoring Force Triangle for ΔE‡ = {Delta_E_thermal_target_RFT} kcal/mol')
+plt.xlim(-0.1, X_max)
+plt.ylim(-f_max * 1.2, f_max * 1.2)  # Set Y-axis range from -f_max to f_max
+plt.grid(True)
+
+# Adjust the legend (only key points)
+handles = [
+    Line2D([0], [0], color='red', linestyle='--', linewidth=1, marker='o',
+           markerfacecolor='red', markeredgecolor='red', label=f'X_TAB = {X_TAB:.4f} Å'),
+    Line2D([0], [0], color='green', linestyle='--', linewidth=1, marker='o',
+           markerfacecolor='green', markeredgecolor='green', label=f'X_TTS = {X_TTS:.4f} Å'),
+    Line2D([0], [0], color='blue', linestyle='--', linewidth=1, label='Altitude (f_max)'),
+    Line2D([0], [0], color='black', marker='o', linestyle='None',
+           label=f'Point A ({X_A:.4f}, {Y_A:.4f})'),
+    Line2D([0], [0], color='magenta', marker='o', linestyle='None',
+           label=f'Point B ({X_B:.4f}, {Y_B:.4f})'),
+    Line2D([0], [0], color='black', marker='o', linestyle='None',
+           label=f'Point C ({X_C:.4f}, {Y_C:.4f})')
+]
+plt.legend(handles=handles, loc='lower right', fontsize=9, framealpha=0.9)
+
+plt.show()
+
+# 10. Create the table
+# Values that are the same for all ΔE‡
+common_data = {
+    'Parameter': ['ΔE', 'k_eff', 'f_max'],
+    'Value': [f'{Delta_E:.4f} kcal/mol', f'{k_eff:.4f} nN/Å', f'{f_max:.4f} nN']
+}
+df_common = pd.DataFrame(common_data)
+print("\nCommon Parameters:")
+print(df_common.to_string(index=False))
+
+# Parameters that depend on ΔE‡
+parameters = ['ΔE‡', 'f*', 'Point A', 'Point B', 'Point C',
+              'Energy of Triangle A', 'Energy of Rectangle B',
+              'Energy of Triangle ∆E‡', 'Energy of Triangle C', 'Energy of Triangle D']
+data = {'Parameter': parameters}
+
+for idx, res in enumerate(results):
+    col_name = f'ΔE‡ = {res["ΔE‡"]} kcal/mol'
+    data[col_name] = [
+        f'{res["ΔE‡"]:.4f} kcal/mol',
+        f'{res["f*"]:.4f} nN',
+        f'({res["Point A"][0]:.4f}, {res["Point A"][1]:.4f})',
+        f'({res["Point B"][0]:.4f}, {res["Point B"][1]:.4f})',
+        f'({res["Point C"][0]:.4f}, {res["Point C"][1]:.4f})',
+        f'{res["E_Triangle_A"]:.4f} kcal/mol',
+        f'{res["E_Rectangle_B"]:.4f} kcal/mol',
+        f'{res["E_Triangle_ΔE‡"]:.4f} kcal/mol',
+        f'{res["E_Triangle_C"]:.4f} kcal/mol',
+        f'{res["E_Triangle_D"]:.4f} kcal/mol'
+    ]
+
+df_parameters = pd.DataFrame(data)
+print("\nParameters Dependent on ΔE‡:")
+print(df_parameters.to_string(index=False))
+
+# 11. Validation Checks
+print("\nValidation Checks:")
+# First for the RFT (selected ΔE‡)
+print(f"\nValidation for the RFT (ΔE‡ = {Delta_E_thermal_target_RFT} kcal/mol):")
+total_area_nN_A = shoelace_area(np.array([
+    [res['Point A'][0], res['Point A'][1]],
+    [res['Point B'][0], res['Point B'][1]],
+    [res['Point C'][0], res['Point C'][1]]
+]))
+total_area_kcal_mol = total_area_nN_A / conversion_factor
+print(f"Total area of the RFT is approximately: {total_area_kcal_mol:.4f} kcal/mol")
+if np.isclose(total_area_kcal_mol, Delta_E, atol=0.1):
+    print("The total area of the RFT corresponds to ΔE.")
+else:
+    print("The total area of the RFT does not correspond to ΔE.")
+
+# Then for each ΔE‡ value
+for idx, res in enumerate(results):
+    print(f"\nValidation for ΔE‡ = {res['ΔE‡']} kcal/mol:")
+    sub_triangle_area_nN_A = res['E_Triangle_ΔE‡'] * conversion_factor
+    sub_triangle_area_kcal_mol = sub_triangle_area_nN_A / conversion_factor
+    print(f"Area of the sub-triangle (∆E‡) is approximately: {sub_triangle_area_kcal_mol:.4f} kcal/mol")
+    if np.isclose(sub_triangle_area_kcal_mol, res['ΔE‡'], atol=0.1):
+        print(f"The area of the sub-triangle corresponds to ∆E‡ = {res['ΔE‡']} kcal/mol.")
+    else:
+        print(f"The area of the sub-triangle does not correspond to ∆E‡ = {res['ΔE‡']} kcal/mol.")
+
+# 12. Plot the Reaction Coordinate Diagrams
+plt.figure(figsize=(10, 6))
+
+for idx, res in enumerate(results):
+    color = colors[idx % len(colors)]
+    # Energies for RCD
+    E_GS = 0  # kcal/mol
+    E_TAB = res['E_Triangle_A']  # Energy of Triangle A
+    E_TTS = E_TAB + res['ΔE‡']  # E_TTS = E_TAB + ΔE‡
+    E_TI = E_TTS + res['E_Triangle_D']  # E_TI = E_TTS + Energy of Triangle D (negative)
+    # Positions
+    X_GS = 0
+    X_TAB = res['X_TAB']
+    X_TTS = res['X_TTS']
+    X_TI = res['Point C'][0]
+
+    # Define the states
+    states = [
+        {'name': 'GS', 'x': X_GS, 'E': E_GS},
+        {'name': 'TAB', 'x': X_TAB, 'E': E_TAB},
+        {'name': 'TTS', 'x': X_TTS, 'E': E_TTS},
+        {'name': 'TI', 'x': X_TI, 'E': E_TI}
+    ]
+
+    # Plot the energy levels for each state
+    for state in states:
+        x_center = state['x']
+        E_level = state['E']
+        plt.hlines(E_level, x_center - 0.05, x_center + 0.05,
+                   colors=color, linewidth=2)
+        plt.plot(x_center, E_level, 'o', color=color)
+
+    # Connect consecutive states with lines
+    for i in range(len(states) - 1):
+        x_start = states[i]['x']
+        E_start = states[i]['E']
+        x_end = states[i + 1]['x']
+        E_end = states[i + 1]['E']
+        plt.plot([x_start, x_end], [E_start, E_end], color=color,
+                 label=f'ΔE‡ = {res["ΔE‡"]} kcal/mol' if i == 0 else "")
+        # Annotate energy differences
+        delta_E = E_end - E_start
+        mid_x = (x_start + x_end) / 2
+        mid_E = (E_start + E_end) / 2
+        plt.text(mid_x, mid_E + 1, f'{delta_E:.2f} kcal/mol',
+                 horizontalalignment='center', fontsize=10, color=color)
+
+# Customize the plot
+plt.xlabel('Displacement (Å)')
+plt.ylabel('Energy (kcal/mol)')
+plt.title('Reaction Coordinate Diagrams Comparison')
+plt.grid(True)
+plt.legend()
+plt.show()
